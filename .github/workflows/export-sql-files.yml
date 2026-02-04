@@ -1,0 +1,38 @@
+name: Export SQL Files
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  package-sql:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify sql directory and list files
+        run: |
+          if [ ! -d "sql" ]; then
+            echo "sql directory not found at repository root" >&2
+            exit 1
+          fi
+          echo "Listing SQL files in sql/:"
+          find sql -type f -name "*.sql" | tee sql_file_list.txt || true
+
+      - name: Archive sql directory
+        run: |
+          tar -czf sql-files.tar.gz sql
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sql-files
+          path: |
+            sql-files.tar.gz
+            sql_file_list.txt
