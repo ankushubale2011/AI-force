@@ -1,0 +1,225 @@
+# SQL Advance Search CI/CD Workflow
+#
+# Prerequisites:
+# - Create GitHub Environments: dev, test, staging, prod.
+# - For each environment, add the following secrets:
+#     SQL_SERVER     e.g. tcp:your-sql-host,1433
+#     SQL_DB         e.g. your_database_name
+#     SQL_USER       e.g. your_user
+#     SQL_PASSWORD   e.g. your_password
+# - Ensure the stored procedure script exists at db/procs/ISG_Azure_AdvanceSearch.sql
+#   and uses CREATE OR ALTER PROC if possible.
+#
+# This workflow:
+# - Lints the SQL file with sqlfluff (tsql dialect)
+# - Deploys the procedure to dev, then test, then staging, then prod using sqlcmd
+# - Runs a smoke test EXEC after each deploy
+
+name: SQL Advance Search CI/CD
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  PROC_PATH: db/procs/ISG_Azure_AdvanceSearch.sql
+
+jobs:
+  lint:
+    name: Lint SQL
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure SQL file exists
+        run: |
+          if [ ! -f "$PROC_PATH" ]; then
+            echo "Error: $PROC_PATH not found. Commit your stored procedure to this path." >&2
+            exit 1
+          fi
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install sqlfluff
+        run: |
+          pip install "sqlfluff>=2.3.0" "sqlfluff-templater-jinja"
+
+      - name: Lint with sqlfluff (tsql)
+        run: |
+          sqlfluff --version
+          sqlfluff lint "$PROC_PATH" --dialect tsql
+
+  deploy-dev:
+    name: Deploy to Dev
+    needs: lint
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install sqlcmd (mssql-tools18)
+        run: |
+          curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+          curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/msprod.list
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev
+          echo "/opt/mssql-tools18/bin" >> $GITHUB_PATH
+
+      - name: Prepare deploy script
+        run: |
+          echo "IF OBJECT_ID('[dbo].[ISG_Azure_AdvanceSearch]', 'P') IS NULL EXEC('CREATE PROC [dbo].[ISG_Azure_AdvanceSearch] AS BEGIN SET NOCOUNT ON; SELECT 1; END');" > deploy.sql
+          echo "GO" >> deploy.sql
+          echo ":r $PROC_PATH" >> deploy.sql
+
+      - name: Deploy procedure (dev)
+        env:
+          SQL_SERVER: ${{ secrets.SQL_SERVER }}
+          SQL_DB: ${{ secrets.SQL_DB }}
+          SQL_USER: ${{ secrets.SQL_USER }}
+          SQL_PASSWORD: ${{ secrets.SQL_PASSWORD }}
+        run: |
+          sqlcmd -S "$SQL_SERVER" -d "$SQL_DB" -U "$SQL_USER" -P "$SQL_PASSWORD" -C -b -i deploy.sql
+
+      - name: Smoke test (dev)
+        env:
+          SQL_SERVER: ${{ secrets.SQL_SERVER }}
+          SQL_DB: ${{ secrets.SQL_DB }}
+          SQL_USER: ${{ secrets.SQL_USER }}
+          SQL_PASSWORD: ${{ secrets.SQL_PASSWORD }}
+        run: |
+          sqlcmd -S "$SQL_SERVER" -d "$SQL_DB" -U "$SQL_USER" -P "$SQL_PASSWORD" -C -b -Q "SET NOCOUNT ON; EXEC [dbo].[ISG_Azure_AdvanceSearch] @LoggedInEmpCode='00000000', @RoleType='4', @PageNumber=1, @PageSize=10, @SortingType='0?DESC', @SapCode=NULL, @CaseId=NULL, @VisaType=NULL, @VisaSubType=NULL, @CurrentStatus=NULL, @CountryIdAdvance=NULL, @CreationDate=NULL, @FillingDate=NULL, @ModificationPeriodFrom=NULL, @ModificationPeriodTo=NULL, @IsPremium=NULL;"
+
+  deploy-test:
+    name: Deploy to Test
+    needs: deploy-dev
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install sqlcmd (mssql-tools18)
+        run: |
+          curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+          curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/msprod.list
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev
+          echo "/opt/mssql-tools18/bin" >> $GITHUB_PATH
+
+      - name: Prepare deploy script
+        run: |
+          echo "IF OBJECT_ID('[dbo].[ISG_Azure_AdvanceSearch]', 'P') IS NULL EXEC('CREATE PROC [dbo].[ISG_Azure_AdvanceSearch] AS BEGIN SET NOCOUNT ON; SELECT 1; END');" > deploy.sql
+          echo "GO" >> deploy.sql
+          echo ":r $PROC_PATH" >> deploy.sql
+
+      - name: Deploy procedure (test)
+        env:
+          SQL_SERVER: ${{ secrets.SQL_SERVER }}
+          SQL_DB: ${{ secrets.SQL_DB }}
+          SQL_USER: ${{ secrets.SQL_USER }}
+          SQL_PASSWORD: ${{ secrets.SQL_PASSWORD }}
+        run: |
+          sqlcmd -S "$SQL_SERVER" -d "$SQL_DB" -U "$SQL_USER" -P "$SQL_PASSWORD" -C -b -i deploy.sql
+
+      - name: Smoke test (test)
+        env:
+          SQL_SERVER: ${{ secrets.SQL_SERVER }}
+          SQL_DB: ${{ secrets.SQL_DB }}
+          SQL_USER: ${{ secrets.SQL_USER }}
+          SQL_PASSWORD: ${{ secrets.SQL_PASSWORD }}
+        run: |
+          sqlcmd -S "$SQL_SERVER" -d "$SQL_DB" -U "$SQL_USER" -P "$SQL_PASSWORD" -C -b -Q "SET NOCOUNT ON; EXEC [dbo].[ISG_Azure_AdvanceSearch] @LoggedInEmpCode='00000000', @RoleType='4', @PageNumber=1, @PageSize=10, @SortingType='0?DESC', @SapCode=NULL, @CaseId=NULL, @VisaType=NULL, @VisaSubType=NULL, @CurrentStatus=NULL, @CountryIdAdvance=NULL, @CreationDate=NULL, @FillingDate=NULL, @ModificationPeriodFrom=NULL, @ModificationPeriodTo=NULL, @IsPremium=NULL;"
+
+  deploy-staging:
+    name: Deploy to Staging
+    needs: deploy-test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install sqlcmd (mssql-tools18)
+        run: |
+          curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+          curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/msprod.list
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev
+          echo "/opt/mssql-tools18/bin" >> $GITHUB_PATH
+
+      - name: Prepare deploy script
+        run: |
+          echo "IF OBJECT_ID('[dbo].[ISG_Azure_AdvanceSearch]', 'P') IS NULL EXEC('CREATE PROC [dbo].[ISG_Azure_AdvanceSearch] AS BEGIN SET NOCOUNT ON; SELECT 1; END');" > deploy.sql
+          echo "GO" >> deploy.sql
+          echo ":r $PROC_PATH" >> deploy.sql
+
+      - name: Deploy procedure (staging)
+        env:
+          SQL_SERVER: ${{ secrets.SQL_SERVER }}
+          SQL_DB: ${{ secrets.SQL_DB }}
+          SQL_USER: ${{ secrets.SQL_USER }}
+          SQL_PASSWORD: ${{ secrets.SQL_PASSWORD }}
+        run: |
+          sqlcmd -S "$SQL_SERVER" -d "$SQL_DB" -U "$SQL_USER" -P "$SQL_PASSWORD" -C -b -i deploy.sql
+
+      - name: Smoke test (staging)
+        env:
+          SQL_SERVER: ${{ secrets.SQL_SERVER }}
+          SQL_DB: ${{ secrets.SQL_DB }}
+          SQL_USER: ${{ secrets.SQL_USER }}
+          SQL_PASSWORD: ${{ secrets.SQL_PASSWORD }}
+        run: |
+          sqlcmd -S "$SQL_SERVER" -d "$SQL_DB" -U "$SQL_USER" -P "$SQL_PASSWORD" -C -b -Q "SET NOCOUNT ON; EXEC [dbo].[ISG_Azure_AdvanceSearch] @LoggedInEmpCode='00000000', @RoleType='4', @PageNumber=1, @PageSize=10, @SortingType='0?DESC', @SapCode=NULL, @CaseId=NULL, @VisaType=NULL, @VisaSubType=NULL, @CurrentStatus=NULL, @CountryIdAdvance=NULL, @CreationDate=NULL, @FillingDate=NULL, @ModificationPeriodFrom=NULL, @ModificationPeriodTo=NULL, @IsPremium=NULL;"
+
+  deploy-prod:
+    name: Deploy to Prod
+    needs: deploy-staging
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install sqlcmd (mssql-tools18)
+        run: |
+          curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+          curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/msprod.list
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev
+          echo "/opt/mssql-tools18/bin" >> $GITHUB_PATH
+
+      - name: Prepare deploy script
+        run: |
+          echo "IF OBJECT_ID('[dbo].[ISG_Azure_AdvanceSearch]', 'P') IS NULL EXEC('CREATE PROC [dbo].[ISG_Azure_AdvanceSearch] AS BEGIN SET NOCOUNT ON; SELECT 1; END');" > deploy.sql
+          echo "GO" >> deploy.sql
+          echo ":r $PROC_PATH" >> deploy.sql
+
+      - name: Deploy procedure (prod)
+        env:
+          SQL_SERVER: ${{ secrets.SQL_SERVER }}
+          SQL_DB: ${{ secrets.SQL_DB }}
+          SQL_USER: ${{ secrets.SQL_USER }}
+          SQL_PASSWORD: ${{ secrets.SQL_PASSWORD }}
+        run: |
+          sqlcmd -S "$SQL_SERVER" -d "$SQL_DB" -U "$SQL_USER" -P "$SQL_PASSWORD" -C -b -i deploy.sql
+
+      - name: Smoke test (prod)
+        env:
+          SQL_SERVER: ${{ secrets.SQL_SERVER }}
+          SQL_DB: ${{ secrets.SQL_DB }}
+          SQL_USER: ${{ secrets.SQL_USER }}
+          SQL_PASSWORD: ${{ secrets.SQL_PASSWORD }}
+        run: |
+          sqlcmd -S "$SQL_SERVER" -d "$SQL_DB" -U "$SQL_USER" -P "$SQL_PASSWORD" -C -b -Q "SET NOCOUNT ON; EXEC [dbo].[ISG_Azure_AdvanceSearch] @LoggedInEmpCode='00000000', @RoleType='4', @PageNumber=1, @PageSize=10, @SortingType='0?DESC', @SapCode=NULL, @CaseId=NULL, @VisaType=NULL, @VisaSubType=NULL, @CurrentStatus=NULL, @CountryIdAdvance=NULL, @CreationDate=NULL, @FillingDate=NULL, @ModificationPeriodFrom=NULL, @ModificationPeriodTo=NULL, @IsPremium=NULL;"
