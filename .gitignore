@@ -1,0 +1,43 @@
+# .NET / Visual Studio
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build results
+[Bb]uild/
+[Rr]elease/
+[Dd]ebug/
+
+# NuGet
+*.nupkg
+**/packages/*
+
+# Logs
+*.log
+
+# VS Code
+.vscode/
+
+# Rider
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets and local settings
+src/UserManagementAPI/appsettings.Development.json
+src/UserManagementAPI/appsettings.Local.json
+*.secret.json
+
+# Generated files
+*.generated.cs
+
+# Publish
+publish/
+
+# Docker
+*.env
