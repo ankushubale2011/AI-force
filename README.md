@@ -1,47 +1,79 @@
-# User Management API (.NET 8 + MongoDB)
+# UserManagementAPI (.NET 8 + MongoDB)
 
-Implements the requirements from Code-Gen-Requirement.txt:
-- Registration via email or phone with validation
-- Login/logout
-- Forgot password using security question (sends reset link placeholder)
-- Save personal information with validation
-- Provide top 10 food preferences
-- Persist all data in MongoDB
+This project implements the requirements from `Code-Gen-Requirement.txt`:
 
-## Tech
-- .NET 8 (ASP.NET Core Web API)
-- MongoDB (MongoDB.Driver)
-- Password hashing with BCrypt
-- Basic rate limiting for auth endpoints
+- User registration with validation
+- Login/logout with error handling
+- Forgot password (token + reset link plumbing point)
+- Save personal info with field validations
+- List of top 10 food preferences
+- MongoDB for persistence
+- Password hashing (BCrypt) and basic rate limiting
 
-## Setup
-1. Prerequisites: .NET 8 SDK, MongoDB instance/Atlas connection string.
-2. Clone repo and navigate to `src/UserManagementAPI`.
-3. Configure connection string:
-   - Prefer environment variable `MONGODB_URI`.
-   - Or edit `appsettings.json` (placeholder is present). Avoid committing real secrets.
-4. Run:
-   - `dotnet restore`
-   - `dotnet build`
-   - `dotnet run`
-5. API base: `https://localhost:5001` (or `http://localhost:5000`).
+## Structure
 
-## Endpoints
-- POST `/api/auth/register` — Register with Email or Phone, Password/Confirm, SecurityQuestion, SecurityAnswer.
-- POST `/api/auth/login` — Login with EmailOrPhone + Password. Returns 200 on success, 400 on invalid.
-- POST `/api/auth/forgot-password` — Verify SecurityAnswer and (placeholder) send reset link.
-- POST `/api/auth/logout` — Stateless placeholder returns 200.
-- POST `/api/user/personal-info` — Save Name, Age, Sex (Male/Female), Address, ProfilePicture, optional FoodPreferences for a user identified by EmailOrPhone.
-- GET `/api/user/food-preferences` — Returns the top 10 food types.
-
-## Security
-- Passwords and security answers are hashed (BCrypt).
-- Basic rate limiting on `/login` and `/forgot-password`.
+```
+/ src/UserManagementAPI            # ASP.NET Core Web API project
+/ tests/UserManagementAPI.Tests    # xUnit tests
+/ .github/workflows/dotnet.yml     # CI: build and tests
+UserManagement.sln                 # Solution
+```
 
 ## Configuration
-- Database name default: `UserManagementDB`.
-- Collections: `Users`, `PasswordResetTokens`.
+
+The API expects the MongoDB connection string from the environment variable `MONGODB_URI`. In development, `launchSettings.json` sets:
+
+```
+MONGODB_URI = mongodb://localhost:27017/UserManagementDB
+```
+
+In production/CI, provide this via environment or GitHub Secret.
+
+### GitHub Secret: MONGODB_URI
+
+Set a repository secret so CI and deployments can access it.
+
+1. Go to GitHub repo → Settings → Secrets and variables → Actions → New repository secret
+2. Name: `MONGODB_URI`
+3. Value: e.g. `mongodb+srv://<user>:<password>@<cluster>/<database>?retryWrites=true&w=majority`
+
+The CI workflow consumes it during `dotnet test`.
+
+## Run locally
+
+- .NET 8 SDK required
+
+```
+cd src/UserManagementAPI
+ dotnet restore
+ dotnet run
+```
+
+API will start on:
+- https://localhost:7243
+- http://localhost:5243
+
+## Docker
+
+Build and run the API in Docker:
+
+```
+docker build -t usermgmt-api:latest -f src/UserManagementAPI/Dockerfile .
+docker run -e MONGODB_URI="mongodb://host.docker.internal:27017/UserManagementDB" -p 8080:8080 usermgmt-api:latest
+```
+
+## Endpoints (high level)
+
+- POST `/register` – email/phone + password + confirm + security question; validations enforced
+- POST `/forgot-password` – verifies security question answer, emits reset token (wire up email/SMS)
+- POST `/login` – returns success or error
+- POST `/logout`
+- GET `/api/user/food-preferences` – returns top 10 types
+- POST `/api/user/personal-info` – name, age, sex, address, profile picture; validations enforced
 
 ## Notes
-- Email/SMS sending for password reset is a placeholder to be wired to a provider.
-- For production, add proper authentication (e.g., JWT), HTTPS, and secret storage (GitHub Secrets, Key Vault, etc.).
+
+- Passwords are stored as hashes (BCrypt)
+- Basic rate limiting applied to sensitive endpoints
+- Add your email/SMS provider for sending password reset links
+- Supply `MONGODB_URI` via env or GitHub Secrets; `appsettings.json` contains only a placeholder
