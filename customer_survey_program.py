@@ -1,194 +1,163 @@
+import os
 import datetime
-import json
+from flask import Flask, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.exc import SQLAlchemyError
 
-# Constants
-SURVEY_FILE = 'surveys.json'
-CUSTOMER_FILE = 'customers.json'
-STATUS_PENDING = 'Pending'
-STATUS_APPROVED = 'Approved'
-STATUS_REJECTED = 'Rejected'
-STATUS_COMPLETED = 'Completed'
+# ---------------------- Constants ----------------------
+DATABASE_URI = 'sqlite:///customer_survey.db'
+SURVEY_STATUS_DRAFT = 'Draft'
+SURVEY_STATUS_REVIEW = 'Under Review'
+SURVEY_STATUS_APPROVED = 'Approved'
+SURVEY_STATUS_REJECTED = 'Rejected'
+SURVEY_STATUS_PUBLISHED = 'Published'
+SURVEY_STATUS_COMPLETED = 'Completed'
+EMAIL_NOTIFICATION_ENABLED = True
+EMAIL_NOTIFICATION_SENDER = 'no-reply@surveyprogram.com'
 
-# Exception Handling
-class SurveyException(Exception):
-    pass
+# ---------------------- Initialization ----------------------
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URI
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
 
-class CustomerException(Exception):
-    pass
+# ---------------------- Models ----------------------
+class Survey(db.Model):
+    """Represents the survey entity in the system."""
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    created_by = db.Column(db.String(100), nullable=False)
+    status = db.Column(db.String(50), nullable=False, default=SURVEY_STATUS_DRAFT)
+    customer_email = db.Column(db.String(255), nullable=False)
+    start_date = db.Column(db.DateTime, nullable=False)
+    end_date = db.Column(db.DateTime, nullable=False)
+    questions = db.relationship('Question', backref='survey', lazy=True)
 
-# Utility Functions
-def load_data(file_path):
+
+class Question(db.Model):
+    """Represents a question within a survey."""
+    id = db.Column(db.Integer, primary_key=True)
+    text = db.Column(db.String(500), nullable=False)
+    survey_id = db.Column(db.Integer, db.ForeignKey('survey.id'), nullable=False)
+
+
+class SurveyResponse(db.Model):
+    """Stores customer responses for a survey."""
+    id = db.Column(db.Integer, primary_key=True)
+    survey_id = db.Column(db.Integer, db.ForeignKey('survey.id'), nullable=False)
+    responses = db.Column(db.Text, nullable=False)
+    submitted_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+
+
+# ---------------------- Utility Functions ----------------------
+def send_email_notification(recipient_email, subject, body):
     """
-    Load data from a JSON file.
+    Sends email notification to a recipient.
 
-    :param file_path: Path to the JSON file.
-    :return: Data loaded from the file.
+    Args:
+        recipient_email (str): Email address of recipient.
+        subject (str): Email subject line.
+        body (str): Email body content.
+
+    Returns:
+        bool: True if sent successfully, False otherwise.
     """
     try:
-        with open(file_path, 'r') as file:
-            return json.load(file)
-    except FileNotFoundError:
-        return []
+        if EMAIL_NOTIFICATION_ENABLED:
+            # Placeholder: In real app, integrate with SMTP or email API
+            print(f"Sending email to {recipient_email} - Subject: {subject}")
+        return True
     except Exception as e:
-        raise SurveyException(f"Error loading data from {file_path}: {e}")
+        print(f"Error sending email: {e}")
+        return False
 
-def save_data(file_path, data):
-    """
-    Save data to a JSON file.
 
-    :param file_path: Path to the JSON file.
-    :param data: Data to be saved.
-    """
-    try:
-        with open(file_path, 'w') as file:
-            json.dump(data, file, indent=4)
-    except Exception as e:
-        raise SurveyException(f"Error saving data to {file_path}: {e}")
-
-# Survey Management
-class Survey:
-    def __init__(self, title, questions, start_date, end_date, customer_ids):
-        """
-        Initialize a new survey.
-
-        :param title: Title of the survey.
-        :param questions: List of survey questions.
-        :param start_date: Start date of the survey.
-        :param end_date: End date of the survey.
-        :param customer_ids: List of customer IDs to whom the survey is assigned.
-        """
-        self.title = title
-        self.questions = questions
-        self.start_date = start_date
-        self.end_date = end_date
-        self.customer_ids = customer_ids
-        self.status = STATUS_PENDING
-        self.responses = {}
-
-    def to_dict(self):
-        """
-        Convert the survey object to a dictionary.
-
-        :return: Dictionary representation of the survey.
-        """
-        return self.__dict__
-
-    @staticmethod
-    def from_dict(data):
-        """
-        Create a survey object from a dictionary.
-
-        :param data: Dictionary containing survey data.
-        :return: Survey object.
-        """
-        survey = Survey(
-            data['title'],
-            data['questions'],
-            data['start_date'],
-            data['end_date'],
-            data['customer_ids']
-        )
-        survey.status = data['status']
-        survey.responses = data['responses']
-        return survey
-
-# Lead Manager Functions
+# ---------------------- Route Handlers ----------------------
+@app.route('/survey/create', methods=['POST'])
 def create_survey():
     """
-    Create a new survey and save it to the data store.
+    Creates a new survey and saves it in the database.
+    Expects JSON with title, description, created_by, customer_email, dates and questions.
     """
     try:
-        title = input("Enter survey title: ")
-        questions = input("Enter survey questions (comma-separated): ").split(',')
-        start_date = input("Enter start date (YYYY-MM-DD): ")
-        end_date = input("Enter end date (YYYY-MM-DD): ")
-        customer_ids = input("Enter customer IDs (comma-separated): ").split(',')
+        data = request.get_json()
+        new_survey = Survey(
+            title=data.get('title'),
+            description=data.get('description'),
+            created_by=data.get('created_by'),
+            customer_email=data.get('customer_email'),
+            start_date=datetime.datetime.strptime(data.get('start_date'), "%Y-%m-%d"),
+            end_date=datetime.datetime.strptime(data.get('end_date'), "%Y-%m-%d"),
+        )
+        db.session.add(new_survey)
+        db.session.commit()
 
-        survey = Survey(title, questions, start_date, end_date, customer_ids)
-        surveys = load_data(SURVEY_FILE)
-        surveys.append(survey.to_dict())
-        save_data(SURVEY_FILE, surveys)
-        print("Survey created successfully.")
-    except Exception as e:
-        print(f"Error creating survey: {e}")
+        for q_text in data.get('questions', []):
+            question = Question(text=q_text, survey_id=new_survey.id)
+            db.session.add(question)
+        db.session.commit()
 
-# CoE Functions
-def review_surveys():
+        return jsonify({"message": "Survey created successfully"}), 201
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+    except Exception as ex:
+        return jsonify({"error": str(ex)}), 500
+
+
+@app.route('/survey/review/<int:survey_id>', methods=['POST'])
+def review_survey(survey_id):
     """
-    Review pending surveys and update their status based on CoE action.
-    """
-    try:
-        surveys = load_data(SURVEY_FILE)
-        for i, survey_data in enumerate(surveys):
-            survey = Survey.from_dict(survey_data)
-            if survey.status == STATUS_PENDING:
-                print(f"Survey {i+1}: {survey.title}")
-                print(f"Questions: {', '.join(survey.questions)}")
-                print(f"Start Date: {survey.start_date}")
-                print(f"End Date: {survey.end_date}")
-                action = input("Approve (A), Reject (R), or Request Changes (C): ").upper()
-                if action == 'A':
-                    survey.status = STATUS_APPROVED
-                elif action == 'R':
-                    survey.status = STATUS_REJECTED
-                elif action == 'C':
-                    survey.status = STATUS_PENDING
-                else:
-                    print("Invalid action.")
-                surveys[i] = survey.to_dict()
-        save_data(SURVEY_FILE, surveys)
-    except Exception as e:
-        print(f"Error reviewing surveys: {e}")
-
-# Customer Functions
-def take_survey(customer_id):
-    """
-    Allow a customer to take an approved survey and submit their responses.
-
-    :param customer_id: ID of the customer taking the survey.
+    Reviews a survey and updates its status accordingly.
+    Expects JSON with status ('Approved', 'Rejected', or 'Under Review').
     """
     try:
-        surveys = load_data(SURVEY_FILE)
-        for i, survey_data in enumerate(surveys):
-            survey = Survey.from_dict(survey_data)
-            if survey.status == STATUS_APPROVED and customer_id in survey.customer_ids:
-                print(f"Survey {i+1}: {survey.title}")
-                responses = {}
-                for question in survey.questions:
-                    response = input(f"{question}: ")
-                    responses[question] = response
-                survey.responses[customer_id] = responses
-                survey.status = STATUS_COMPLETED
-                surveys[i] = survey.to_dict()
-        save_data(SURVEY_FILE, surveys)
-    except Exception as e:
-        print(f"Error taking survey: {e}")
+        data = request.get_json()
+        survey = Survey.query.get_or_404(survey_id)
+        survey.status = data.get('status', SURVEY_STATUS_REVIEW)
+        db.session.commit()
 
-# Main Function
-def main():
+        if survey.status == SURVEY_STATUS_APPROVED:
+            send_email_notification(survey.customer_email, 
+                                    "Survey Approved", 
+                                    f"Survey '{survey.title}' has been approved.")
+        return jsonify({"message": f"Survey status updated to {survey.status}"}), 200
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+    except Exception as ex:
+        return jsonify({"error": str(ex)}), 500
+
+
+@app.route('/survey/fill/<int:survey_id>', methods=['POST'])
+def fill_survey(survey_id):
     """
-    Main function to handle user interaction and role-based actions.
+    Allows a customer to submit survey responses.
+    Expects JSON containing responses list.
     """
     try:
-        while True:
-            print("1. Create Survey (Lead Manager)")
-            print("2. Review Surveys (CoE)")
-            print("3. Take Survey (Customer)")
-            print("4. Exit")
-            choice = input("Enter your choice: ")
-            if choice == '1':
-                create_survey()
-            elif choice == '2':
-                review_surveys()
-            elif choice == '3':
-                customer_id = input("Enter your customer ID: ")
-                take_survey(customer_id)
-            elif choice == '4':
-                break
-            else:
-                print("Invalid choice.")
-    except Exception as e:
-        print(f"Error in main function: {e}")
+        data = request.get_json()
+        survey_response = SurveyResponse(
+            survey_id=survey_id,
+            responses=str(data.get('responses'))
+        )
+        db.session.add(survey_response)
 
-if __name__ == "__main__":
-    main()
+        survey = Survey.query.get_or_404(survey_id)
+        survey.status = SURVEY_STATUS_COMPLETED
+        db.session.commit()
+
+        return jsonify({"message": "Survey responses submitted successfully"}), 200
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+    except Exception as ex:
+        return jsonify({"error": str(ex)}), 500
+
+
+# ---------------------- Main Entry ----------------------
+if __name__ == '__main__':
+    if not os.path.exists('customer_survey.db'):
+        db.create_all()
+    app.run(debug=True)
