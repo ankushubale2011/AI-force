@@ -1,79 +1,78 @@
-# UserManagementAPI (.NET 8 + MongoDB)
+# Customer Survey Program
 
-This project implements the requirements from `Code-Gen-Requirement.txt`:
+## Overview
+This application manages an end-to-end customer survey lifecycle with three roles:
+1. **Lead Manager**
+2. **Center of Excellence (CoE)**
+3. **Customer**
 
-- User registration with validation
-- Login/logout with error handling
-- Forgot password (token + reset link plumbing point)
-- Save personal info with field validations
-- List of top 10 food preferences
-- MongoDB for persistence
-- Password hashing (BCrypt) and basic rate limiting
+### Features & Workflow:
+- Lead Manager creates a survey with questions/parameters, dates, and customer mapping, then submits for CoE review.
+- CoE reviews survey details and can approve, reject, or request changes.
+- Once approved, the survey is published and sent to customers via portal and optional email notification.
+- Customers open survey link, fill in parameters/questions, save progress, and submit the final response.
+- The system tracks status, sends notifications, keeps an audit trail, and enables reporting/exports for internal stakeholders.
 
-## Structure
+## Technology Stack
+- **UI:** Angular
+- **Middleware:** .NET Core
+- **Database:** MS SQL 2022
 
+## Project Structure
 ```
-/ src/UserManagementAPI            # ASP.NET Core Web API project
-/ tests/UserManagementAPI.Tests    # xUnit tests
-/ .github/workflows/dotnet.yml     # CI: build and tests
-UserManagement.sln                 # Solution
-```
-
-## Configuration
-
-The API expects the MongoDB connection string from the environment variable `MONGODB_URI`. In development, `launchSettings.json` sets:
-
-```
-MONGODB_URI = mongodb://localhost:27017/UserManagementDB
-```
-
-In production/CI, provide this via environment or GitHub Secret.
-
-### GitHub Secret: MONGODB_URI
-
-Set a repository secret so CI and deployments can access it.
-
-1. Go to GitHub repo → Settings → Secrets and variables → Actions → New repository secret
-2. Name: `MONGODB_URI`
-3. Value: e.g. `mongodb+srv://<user>:<password>@<cluster>/<database>?retryWrites=true&w=majority`
-
-The CI workflow consumes it during `dotnet test`.
-
-## Run locally
-
-- .NET 8 SDK required
-
-```
-cd src/UserManagementAPI
- dotnet restore
- dotnet run
+/backend
+  Controllers/
+  Services/
+  Models/
+  Constants/
+  Data/
+  schema.sql
+/frontend
+  src/app/
+    survey/
+      survey.service.ts
+      survey.component.ts
 ```
 
-API will start on:
-- https://localhost:7243
-- http://localhost:5243
+## Setup Instructions
 
-## Docker
+### Backend (.NET Core)
+1. Install .NET Core SDK.
+2. Navigate to `/backend`.
+3. Restore dependencies:
+   ```bash
+   dotnet restore
+   ```
+4. Update `appsettings.json` with your database connection string.
+5. Apply migrations and update database:
+   ```bash
+   dotnet ef database update
+   ```
+6. Run the backend:
+   ```bash
+   dotnet run
+   ```
 
-Build and run the API in Docker:
+### Database (MS SQL 2022)
+1. Create a new database.
+2. Execute the `schema.sql` script in `/backend`.
 
-```
-docker build -t usermgmt-api:latest -f src/UserManagementAPI/Dockerfile .
-docker run -e MONGODB_URI="mongodb://host.docker.internal:27017/UserManagementDB" -p 8080:8080 usermgmt-api:latest
-```
+### Frontend (Angular)
+1. Install Node.js and Angular CLI.
+2. Navigate to `/frontend`.
+3. Install dependencies:
+   ```bash
+   npm install
+   ```
+4. Run frontend:
+   ```bash
+   ng serve
+   ```
+5. Open browser at `http://localhost:4200`
 
-## Endpoints (high level)
+## Deployment
+- Ensure both frontend and backend are hosted, with backend API endpoint properly configured in Angular's environment files.
 
-- POST `/register` – email/phone + password + confirm + security question; validations enforced
-- POST `/forgot-password` – verifies security question answer, emits reset token (wire up email/SMS)
-- POST `/login` – returns success or error
-- POST `/logout`
-- GET `/api/user/food-preferences` – returns top 10 types
-- POST `/api/user/personal-info` – name, age, sex, address, profile picture; validations enforced
+## Auth & Roles
+- Implement authentication/authorization with role checks in backend controllers and frontend routing guards.
 
-## Notes
-
-- Passwords are stored as hashes (BCrypt)
-- Basic rate limiting applied to sensitive endpoints
-- Add your email/SMS provider for sending password reset links
-- Supply `MONGODB_URI` via env or GitHub Secrets; `appsettings.json` contains only a placeholder
