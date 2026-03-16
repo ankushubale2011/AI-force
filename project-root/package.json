@@ -1,0 +1,15 @@
+{
+  "name": "ai-force-tests",
+  "version": "1.0.0",
+  "description": "Jest-based test scripts for Java Spring Boot project",
+  "scripts": {
+    "test": "jest"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "verbose": true
+  }
+}
