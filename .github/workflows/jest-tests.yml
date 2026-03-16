@@ -1,0 +1,39 @@
+name: Jest Tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Jest tests
+        run: npm test -- --runInBand
+
+      - name: Upload Jest Test Results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: jest-test-results
+          path: ./test-results
+
+      - name: Install system dependencies for Puppeteer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3 libatk1.0-0 libatk-bridge2.0-0 libx11-xcb1 libxcomposite1 libxrandr2 libxdamage1 libxkbcommon0 libpango-1.0-0 libpangocairo-1.0-0 libasound2 libxshmfence1
