@@ -1,0 +1,4 @@
+# Selenium and Requests dependencies for login validation tests
+selenium
+requests
+unittest
